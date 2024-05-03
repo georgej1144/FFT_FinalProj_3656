@@ -1,6 +1,5 @@
-librosa
-numpy
-matplotlib
-soundfile
-pydub
-scipy
+librosa>=0.10
+numpy>=1.24
+matplotlib>=3.6
+soundfile>=0.12
+scipy>=1.11
