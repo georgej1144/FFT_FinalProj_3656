@@ -1,3 +1,6 @@
 samples/**/*.mp3
 .ipynb_checkpoints
 pat.txt
+__pycache__
+
+
