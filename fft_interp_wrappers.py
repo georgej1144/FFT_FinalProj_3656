@@ -30,7 +30,7 @@ def samples_to_freq(sample_arr):
     mag_arr = np.abs(freq_arr) # |z| = sqrt(k**2 + j**2) reduce complex component
     return mag_arr,freq_arr
 
-def graph_spectro(freq_amp,sr,title=None,figsize=None,save_n=None):
+def graph_spectro(freq_amp,sr,title=None,figsize=None,save_n=None,log=True):
     """
     Display a spectrogram of the provided freq_amp data
 
@@ -53,7 +53,7 @@ def graph_spectro(freq_amp,sr,title=None,figsize=None,save_n=None):
     
     """
     plt.subplots(figsize=figsize)
-    librosa.display.specshow(librosa.amplitude_to_db(freq_amp, ref=np.max), sr=sr, x_axis='time', y_axis='log')
+    librosa.display.specshow(librosa.amplitude_to_db(freq_amp, ref=np.max), sr=sr, x_axis='time', y_axis=('log' if log else 'hz'))
     plt.colorbar(format='%+2.0f dB')
     plt.title(title if title else 'Spectrogram')
     if save_n:
@@ -211,7 +211,7 @@ def full_pipeline(filename, save_dir=None, testname=None, chunks=1,chunk_num=0,f
     fmag_orig,freq_orig = samples_to_freq(smps)
     # FFT on diff samples
     fmag_diff,freq_diff = samples_to_freq(diff_samples)
-
+    
     print("FFT Complete -> constructing charts")
     
     # # Calculate differences between the original and reconstruction in both domains
@@ -253,7 +253,8 @@ def full_pipeline(filename, save_dir=None, testname=None, chunks=1,chunk_num=0,f
                   sr, 
                   title=f'{testname}: Difference Spectrogram',
                   figsize=scale_fig_size(n), 
-                  save_n=(save_n+'diff_spectro.png' if save_n else None))
+                  save_n=(save_n+'diff_spectro.png' if save_n else None),
+                  log=False)
     graph_spectro(fmag_orig,
                   sr,
                   title=f'{testname}: Original Spectrogram',
