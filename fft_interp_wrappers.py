@@ -1,9 +1,10 @@
+# import fft_interp_wrappers as wrap
 import librosa
 import librosa.display
 import numpy as np
 import matplotlib.pyplot as plt
 import soundfile as sf
-from scipy.interpolate import InterpolatedUnivariateSpline
+from scipy.interpolate import InterpolatedUnivariateSpline, CubicSpline
 import datetime
 import os
 
@@ -11,11 +12,13 @@ def scale_fig_size(x_len):
     # kinda arbitrary scaling function to turn array length into a good graph length
     return (int(np.log2(x_len)),4)
 
-def mp3_to_samples(filename,rate=None):
+def mp3_to_samples(filename,rate=None,flac=False):
     """
     Returns
     samples, sample_rate: samples of the mp3 and the sample rate
     """
+    if flac:
+        return sf.read(filename)
     return librosa.load(filename,sr=rate)
 
 def samples_to_freq(sample_arr):
@@ -70,7 +73,8 @@ def get_interp_fun(samples, degree=3):
     spl() - interpolating function for samples
     """
     x = np.arange(0,2*len(samples),2)
-    return InterpolatedUnivariateSpline(x,samples)
+    # return InterpolatedUnivariateSpline(x,samples)#,k=5)
+    return CubicSpline(x,samples)
 
 def remove_half_samples(samples):
     """
@@ -107,6 +111,9 @@ def save_samples_to_wav(samples,sr,filename):
     Not saving to mp3 because mp3 is lossy. No point.
     """
     sf.write(filename,samples,sr)
+
+def RMSE(diff):
+    return np.sqrt(np.mean((diff)**2))
 
 def graph_samples(samples, sr, title=None, interval=None, figsize=None,save_n=None):
     """
@@ -146,7 +153,7 @@ def graph_samples(samples, sr, title=None, interval=None, figsize=None,save_n=No
         plt.savefig(save_n)
     plt.show()
 
-def full_pipeline(filename, save_dir=None, testname=None, chunks=1,chunk_num=0):
+def full_pipeline(filename, save_dir=None, testname=None, chunks=1,chunk_num=0,flac=False):
     """
     Automated testing function
     
@@ -169,23 +176,32 @@ def full_pipeline(filename, save_dir=None, testname=None, chunks=1,chunk_num=0):
     """
     if not testname:
         testname = filename
-    smps,sr = mp3_to_samples(filename)
+    smps,sr = mp3_to_samples(filename,flac=flac)
+    smps = np.array(smps)
     n = len(smps)
     chunk_interval = None
     # take the chunk_num-th chunk of smps divided into chunks
-    if chunks != 1 and chunks != 0: # no div by 0
+    if chunks not in [0,1]: # no div by 0
         if chunks < 0: # no negs, just flip sign
             chunks *= -1
         chunksize = n//chunks
-        smps = smps[chunk_num*chunksize:(chunks+1)*chunksize]
-        chunk_interval = (chunk_num*chunksize,(chunks+1)*chunksize)
-
+        start_idx = chunk_num*chunksize
+        end_idx = (chunk_num+1)*chunksize
+        if np.diff((start_idx,end_idx))[0] % 2 == 1:
+            end_idx += 1
+        smps = smps[start_idx:end_idx]
+        chunk_interval = (start_idx,end_idx)
+    n = len(smps)
     # Cut resolution on samples
     half_smps = remove_half_samples(smps)
     # Interpolate reduced samples
     spline = get_interp_fun(half_smps)
     # Reconstruct "full" resolution samples with values from quadratic spline
     recon_smps = interp_odd_samples(half_smps,spline,n)
+
+    diff_samples = smps - recon_smps
+
+    print(f'RMSE of reconstruction: {RMSE(diff_samples)}')
     
     print("Sample reconstruction complete -> starting FFT")
     
@@ -193,15 +209,16 @@ def full_pipeline(filename, save_dir=None, testname=None, chunks=1,chunk_num=0):
     fmag_recon,freq_recon = samples_to_freq(recon_smps)
     # FFT on original samples
     fmag_orig,freq_orig = samples_to_freq(smps)
+    # FFT on diff samples
+    fmag_diff,freq_diff = samples_to_freq(diff_samples)
 
-    print("FFT Complete -> differencing results")
+    print("FFT Complete -> constructing charts")
     
-    # Calculate differences between the original and reconstruction in both domains
-    mag_diff, diff = fmag_orig-fmag_recon, freq_orig-freq_recon
-    # Create new sample array with iFFT from the difference
-    diff_samples = freq_to_samples(diff)
-
-    print("Calulations complete -> constructing charts")
+    # # Calculate differences between the original and reconstruction in both domains
+    # fmag_diff, diff = fmag_orig-fmag_recon, freq_orig-freq_recon
+    
+    # # Create new sample array with iFFT from the difference
+    # diff_samples = freq_to_samples(diff)
     
     save_n = None
     if save_dir:
@@ -213,7 +230,7 @@ def full_pipeline(filename, save_dir=None, testname=None, chunks=1,chunk_num=0):
     graph_samples(diff_samples, 
                 sr, 
                 title=f'{testname}: Difference Samples', 
-                interval=chunk_interval, 
+                interval=(chunk_interval[0],chunk_interval[0]+len(diff_samples)) if chunk_interval else None, 
                 figsize=scale_fig_size(n), 
                 save_n=(save_n+'diff_samples.png' if save_n else None)
                )
@@ -232,7 +249,7 @@ def full_pipeline(filename, save_dir=None, testname=None, chunks=1,chunk_num=0):
                 save_n=(save_n+'recon_samples.png' if save_n else None)
                )
 
-    graph_spectro(mag_diff,
+    graph_spectro(fmag_diff,
                   sr, 
                   title=f'{testname}: Difference Spectrogram',
                   figsize=scale_fig_size(n), 
